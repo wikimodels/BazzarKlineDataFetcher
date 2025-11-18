@@ -59,7 +59,7 @@ COIN_PROCESSING_LIMIT = 250
 # ============================================================================
 DATABASE_URL = os.environ.get("DATABASE_URL")
 # --- УДАЛЕНО: TG_BOT_TOKEN_KEY, TG_USER_KEY ---
-CONCURRENCY_LIMIT = 3
+CONCURRENCY_LIMIT = 7
 
 # --- 🚀 НАЧАЛО ИЗМЕНЕНИЯ (Миграция Алертов) ---
 TG_BOT_TOKEN_KEY = os.environ.get("TG_BOT_TOKEN")
