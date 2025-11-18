@@ -2,7 +2,6 @@
 """
 Этот модуль отвечает за ПАРСИНГ сырых ответов API от бирж
 и приведение их к ЕДИНОМУ внутреннему формату.
-
 Единый формат:
 Klines: [{'openTime': int, 'openPrice': float, 'highPrice': float, 'lowPrice': float, 'closePrice': float, 'volume': float, 'closeTime': int, 'volumeDelta': float (optional)}]
 OI:     [{'openTime': int, 'openInterest': float, 'closeTime': int}]
@@ -14,7 +13,8 @@ from typing import List, Dict, Any, Optional
 
 # --- Используем логгер из родительского пакета ---
 try:
-    from .logging_setup import logger
+    # --- ИЗМЕНЕНИЕ №1: Исправлен относительный импорт ---
+    from data_collector.logging_setup import logger
 except ImportError:
     # Фоллбэк для standalone запуска
     import logging
@@ -137,8 +137,9 @@ def parse_bybit_klines(raw_data: List[List[str]], timeframe: str) -> List[Dict[s
     """
     parsed_klines = []
     try:
+        # --- ИЗМЕНЕНИЕ №2: Исправлен относительный импорт ---
         # Импортируем локально, чтобы избежать циклической зависимости
-        from ..api_helpers import get_interval_duration_ms
+        from data_collector.data_processing import get_interval_duration_ms
 
         for kline in raw_data:
             if len(kline) < 6:

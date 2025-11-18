@@ -10,6 +10,11 @@ load_dotenv()
 UPSTASH_REDIS_URL = os.environ.get("UPSTASH_REDIS_URL")
 UPSTASH_REDIS_TOKEN = os.environ.get("UPSTASH_REDIS_TOKEN")
 
+UPSTASH_REDIS_URL_I = os.environ.get("UPSTASH_REDIS_URL_I")
+UPSTASH_REDIS_TOKEN_I = os.environ.get("UPSTASH_REDIS_TOKEN_I")
+
+UPSTASH_REDIS_URL_II = os.environ.get("UPSTASH_REDIS_URL_II")
+UPSTASH_REDIS_TOKEN_II = os.environ.get("UPSTASH_REDIS_TOKEN_II")
 # ============================================================================
 # === Ключи Очереди и Блокировки Воркера ===
 # ============================================================================
@@ -28,7 +33,7 @@ SECRET_TOKEN = os.environ.get("SECRET_TOKEN")
 
 # --- НОВАЯ КОНСТАНТА: Главный переключатель режима агрегации ---
 # ACTIVE_TIMEFRAME_PAIR = "12H_1D" # Установим на 12h->1d для следующего теста
-ACTIVE_TIMEFRAME_PAIR = "12H_1D" # Установим на 12h->1d для следующего теста
+ACTIVE_TIMEFRAME_PAIR = "4H_8H" # Установим на 12h->1d для следующего теста
 # -------------------------------------------------------------------
 
 # --- ИЗМЕНЕНО: Добавлены 12h и 1d ---
