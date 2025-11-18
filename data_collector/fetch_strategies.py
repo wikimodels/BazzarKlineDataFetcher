@@ -33,6 +33,10 @@ async def fetch_simple(
     log_prefix = f"[{timeframe.upper()}] FETCH_SIMPLE ({exchange.upper()})"
     
     async with semaphore:
+        # --- ИЗМЕНЕНИЕ: Задержка 200мс для предотвращения HTTP 418 (Rate Limit) ---
+        await asyncio.sleep(0.2)
+        # --------------------------------------------------------------------------
+        
         start_time = time.time()
         try:
             async with session.get(url, timeout=30) as response:
@@ -110,6 +114,10 @@ async def fetch_bybit_paginated(
         for offset in range(0, limit, MAX_PAGE_SIZE):
             page_size = min(MAX_PAGE_SIZE, current_limit)
             
+            # --- ИЗМЕНЕНИЕ: Задержка 200мс для предотвращения Rate Limit ---
+            await asyncio.sleep(0.2)
+            # ---------------------------------------------------------------
+
             # Обновляем параметры URL
             current_url = f"{base_url}?symbol={symbol}&interval={timeframe}&limit={page_size}"
             if all_data:

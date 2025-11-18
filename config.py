@@ -10,11 +10,6 @@ load_dotenv()
 UPSTASH_REDIS_URL = os.environ.get("UPSTASH_REDIS_URL")
 UPSTASH_REDIS_TOKEN = os.environ.get("UPSTASH_REDIS_TOKEN")
 
-UPSTASH_REDIS_URL_I = os.environ.get("UPSTASH_REDIS_URL_I")
-UPSTASH_REDIS_TOKEN_I = os.environ.get("UPSTASH_REDIS_TOKEN_I")
-
-UPSTASH_REDIS_URL_II = os.environ.get("UPSTASH_REDIS_URL_II")
-UPSTASH_REDIS_TOKEN_II = os.environ.get("UPSTASH_REDIS_TOKEN_II")
 # ============================================================================
 # === Ключи Очереди и Блокировки Воркера ===
 # ============================================================================
@@ -64,7 +59,7 @@ COIN_PROCESSING_LIMIT = 250
 # ============================================================================
 DATABASE_URL = os.environ.get("DATABASE_URL")
 # --- УДАЛЕНО: TG_BOT_TOKEN_KEY, TG_USER_KEY ---
-CONCURRENCY_LIMIT = 10
+CONCURRENCY_LIMIT = 3
 
 # --- 🚀 НАЧАЛО ИЗМЕНЕНИЯ (Миграция Алертов) ---
 TG_BOT_TOKEN_KEY = os.environ.get("TG_BOT_TOKEN")
