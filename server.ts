@@ -248,7 +248,7 @@ const startServer = async () => {
   // 3. Запускаем Express-сервер в любом случае
   app.listen(PORT, () => {
     logger.info(
-      `🚀 [SERVER] Успешно запущен на http://localhost:${PORT}`,
+      `🚀 [SERVER] Успешно запущен, слушает на http://${host}:${port}`, // <-- Используем реальный хост
       DColors.green
     );
     logger.info(
