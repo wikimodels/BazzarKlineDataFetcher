@@ -79,25 +79,33 @@ app.get("/api/cache/:tf", checkAuth, async (req: Request, res: Response) => {
 
     if (cachedData) {
       // Проверяем свежесть данных (макс 2 часа)
-      const age = Date.now() - (cachedData as any).timestamp;
-      const maxAge = 2 * 60 * 60 * 1000; // 2 часа
+      // Убедимся, что timestamp существует, прежде чем его читать
+      const timestamp = (cachedData as any)?.timestamp;
+      if (timestamp) {
+        const age = Date.now() - timestamp;
+        const maxAge = 2 * 60 * 60 * 1000; // 2 часа
 
-      if (age < maxAge) {
-        // Данные свежие - отдаём
-        return res.status(200).json({
-          success: true,
-          data: cachedData,
-          cached: true,
-          age: Math.round(age / 60000) + " minutes",
-        });
+        if (age < maxAge) {
+          // Данные свежие - отдаём
+          return res.status(200).json({
+            success: true,
+            data: cachedData,
+            cached: true,
+            age: Math.round(age / 60000) + " minutes",
+          });
+        }
+        logger.info(
+          `[API] Cache for ${timeframe} is stale (age: ${Math.round(
+            age / 60000
+          )} min), regenerating...`,
+          DColors.yellow
+        );
+      } else {
+        logger.warn(
+          `[API] Cache for ${timeframe} found, but missing 'timestamp'. Regenerating...`,
+          DColors.yellow
+        );
       }
-
-      logger.info(
-        `[API] Cache for ${timeframe} is stale (age: ${Math.round(
-          age / 60000
-        )} min), regenerating...`,
-        DColors.yellow
-      );
     }
 
     // Кэша нет или устарел - генерируем ПРЯМО СЕЙЧАС
@@ -204,7 +212,8 @@ app.get(
 );
 
 // --- 404 ---
-app.use((req, res) => {
+// ИСПРАВЛЕНО: Добавлены типы Request и Response
+app.use((req: Request, res: Response) => {
   res.status(404).json({ error: "Not Found" });
 });
 
@@ -213,7 +222,6 @@ app.use((req, res) => {
 // —————————————————————————————————————————————
 
 const startServer = async () => {
-  // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
   try {
     // 1. Всегда запускаем run1dJob() при старте
     logger.info(
@@ -222,7 +230,7 @@ const startServer = async () => {
     );
     await run1dJob(); // <--- Ждем завершения
     logger.info(
-      "[SERVER] ✓ Инициализация/обновление кэша завершено.",
+      "[SERVER] ✓ Инициализация/обновление кэша завершена.",
       DColors.green
     );
   } catch (error: any) {
@@ -236,7 +244,6 @@ const startServer = async () => {
       DColors.yellow
     );
   }
-  // --- КОНЕЦ ИЗМЕНЕНИЯ ---
 
   // 3. Запускаем Express-сервер в любом случае
   app.listen(PORT, () => {
@@ -262,4 +269,3 @@ startServer();
 // 5. Cron: ЗАПУСК ЗАДАЧ (УДАЛЕНО)
 // —————————————————————————————————————————————
 // (Cron-блок удален)
-//
