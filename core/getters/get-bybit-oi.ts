@@ -11,6 +11,8 @@ import {
 } from "../types";
 import { logger } from "../utils/logger";
 import { bybitOiUrl } from "../utils/urls/bybit/bybit-oi-url";
+import { sleep } from "../utils/helpers"; // <--- ДОБАВЛЕНО
+import { CONFIG } from "../config"; // <--- ДОБАВЛЕНО
 // <--- ИЗМЕНЕНО
 
 const INTERVALS: Record<TF, number> = {
@@ -56,6 +58,7 @@ function resampleOI(
   return resampled;
 }
 
+// УДАЛЕНА ЛОКАЛЬНАЯ ФУНКЦИЯ delay
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -67,7 +70,8 @@ async function fetchCoinOI(
   delayMs: number = 0
 ): Promise<any> {
   try {
-    if (delayMs > 0) await delay(delayMs);
+    // Задержка теперь управляется в fetchInBatches
+    // if (delayMs > 0) await delay(delayMs);
     const bybitInterval = BYBIT_INTERVALS[timeframe];
     const url = bybitOiUrl(symbol, bybitInterval, 200);
     const randomUserAgent =
@@ -145,16 +149,28 @@ async function fetchInBatches<T>(
   processor: (item: T) => Promise<any>
 ): Promise<any[]> {
   const results: any[] = [];
+  const DELAY_BETWEEN_BATCHES = CONFIG.THROTTLING.DELAY_MS; // <--- ИСПОЛЬЗУЕМ CONFIG
+  const effectiveBatchSize = CONFIG.THROTTLING.BATCH_SIZE; // <--- ИСПОЛЬЗУЕМ CONFIG
 
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
+  for (let i = 0; i < items.length; i += effectiveBatchSize) {
+    const batch = items.slice(i, i + effectiveBatchSize);
+
+    // 1. Выполняем запросы в батче ПАРАЛЛЕЛЬНО (Promise.all)
     const batchResults = await Promise.all(batch.map(processor));
     results.push(...batchResults);
 
+    // 2. Логируем прогресс
     logger.info(
-      `Прогресс: ${Math.min(i + batchSize, items.length)}/${items.length}`,
+      `Прогресс: ${Math.min(i + effectiveBatchSize, items.length)}/${
+        items.length
+      } (Батч: ${effectiveBatchSize})`,
       DColors.cyan
     );
+
+    // 3. 🛑 ГЛАВНОЕ ИСПРАВЛЕНИЕ: Ждем 400ms между батчами
+    if (i + effectiveBatchSize < items.length) {
+      await sleep(DELAY_BETWEEN_BATCHES);
+    }
   }
 
   return results;
@@ -169,15 +185,16 @@ export async function fetchBybitOI(
     delayMs?: number;
   }
 ): Promise<FetcherResult> {
-  const batchSize = options?.batchSize || coins.length;
-  const delayMs = options?.delayMs || 0;
+  const batchSize = options?.batchSize || CONFIG.THROTTLING.BATCH_SIZE; // <--- ИСПОЛЬЗУЕМ CONFIG
 
   logger.info(
-    `Начало загрузки Bybit OI для ${coins.length} монет [${timeframe}] | Батч: ${batchSize} | Задержка: ${delayMs}ms`,
+    `Начало загрузки Bybit OI для ${coins.length} монет [${timeframe}] | БАТЧ: ${CONFIG.THROTTLING.BATCH_SIZE} | ЗАДЕРЖКА: ${CONFIG.THROTTLING.DELAY_MS}ms между батчами`,
     DColors.yellow
   );
-  const results = await fetchInBatches(coins, batchSize, (coin) =>
-    fetchCoinOI(coin.symbol, timeframe, limit, delayMs)
+  const results = await fetchInBatches(
+    coins,
+    batchSize,
+    (coin) => fetchCoinOI(coin.symbol, timeframe, limit, 0) // Передаем 0 в fetchCoinOI
   );
   const successfulRaw = results.filter((r) => r.success);
   const failedRaw = results.filter((r) => !r.success);

@@ -11,6 +11,8 @@ import {
 import { logger } from "../utils/logger";
 import { binanceFrUrl } from "../utils/urls/binance/binance-fr-url";
 import { bybitFrUrl } from "../utils/urls/bybit/bybit-fr-url";
+import { sleep } from "../utils/helpers"; // <--- ДОБАВЛЕНО
+import { CONFIG } from "../config"; // <--- ДОБАВЛЕНО
 
 // Константы таймфреймов в миллисекундах
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
@@ -26,11 +28,6 @@ const USER_AGENTS = [
 // Нормализация времени к началу интервала
 function normalizeTime(timestamp: number, intervalMs: number): number {
   return Math.floor(timestamp / intervalMs) * intervalMs;
-}
-
-// Задержка между запросами (в мс)
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -127,9 +124,10 @@ async function fetchBinanceFundingRate(
   delayMs: number = 0
 ): Promise<any> {
   try {
-    if (delayMs > 0) {
-      await delay(delayMs);
-    }
+    // Задержка теперь управляется в fetchInBatches
+    // if (delayMs > 0) {
+    //   await delay(delayMs);
+    // }
 
     const randomUserAgent =
       USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
@@ -208,9 +206,10 @@ async function fetchBybitFundingRate(
   delayMs: number = 0
 ): Promise<any> {
   try {
-    if (delayMs > 0) {
-      await delay(delayMs);
-    }
+    // Задержка теперь управляется в fetchInBatches
+    // if (delayMs > 0) {
+    //   await delay(delayMs);
+    // }
 
     const randomUserAgent =
       USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
@@ -288,17 +287,28 @@ async function fetchInBatches<T>(
   processor: (item: T) => Promise<any>
 ): Promise<any[]> {
   const results: any[] = [];
+  const DELAY_BETWEEN_BATCHES = CONFIG.THROTTLING.DELAY_MS; // <--- ИСПОЛЬЗУЕМ CONFIG
+  const effectiveBatchSize = CONFIG.THROTTLING.BATCH_SIZE; // <--- ИСПОЛЬЗУЕМ CONFIG
 
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
+  for (let i = 0; i < items.length; i += effectiveBatchSize) {
+    const batch = items.slice(i, i + effectiveBatchSize);
+
+    // 1. Выполняем запросы в батче ПАРАЛЛЕЛЬНО (Promise.all)
     const batchResults = await Promise.all(batch.map(processor));
     results.push(...batchResults);
 
-    // Логируем прогресс
+    // 2. Логируем прогресс
     logger.info(
-      `Прогресс: ${Math.min(i + batchSize, items.length)}/${items.length}`,
+      `Прогресс: ${Math.min(i + effectiveBatchSize, items.length)}/${
+        items.length
+      } (Батч: ${effectiveBatchSize})`,
       DColors.cyan
     );
+
+    // 3. 🛑 ГЛАВНОЕ ИСПРАВЛЕНИЕ: Ждем 400ms между батчами
+    if (i + effectiveBatchSize < items.length) {
+      await sleep(DELAY_BETWEEN_BATCHES);
+    }
   }
 
   return results;
@@ -312,9 +322,10 @@ function fetchFundingRateData(
   delayMs: number = 0
 ): Promise<any> {
   if (exchange === "binance") {
-    return fetchBinanceFundingRate(coin, limit, delayMs);
+    // Передаем 0, т.к. задержка управляется в fetchInBatches
+    return fetchBinanceFundingRate(coin, limit, 0);
   } else {
-    return fetchBybitFundingRate(coin, limit, delayMs);
+    return fetchBybitFundingRate(coin, limit, 0);
   }
 }
 
@@ -328,17 +339,21 @@ export async function fetchFundingRate(
     delayMs?: number;
   }
 ): Promise<FetcherResult> {
-  const batchSize = options?.batchSize || coins.length;
-  const delayMs = options?.delayMs || 0;
+  const batchSize = options?.batchSize || CONFIG.THROTTLING.BATCH_SIZE; // <--- ИСПОЛЬЗУЕМ CONFIG
+  // const delayMs = options?.delayMs || 0;
   logger.info(
     `Начало загрузки ${exchange.toUpperCase()} FR для ${
       coins.length
-    } монет | Батч: ${batchSize} | Задержка: ${delayMs}ms`,
+    } монет | БАТЧ: ${CONFIG.THROTTLING.BATCH_SIZE} | ЗАДЕРЖКА: ${
+      CONFIG.THROTTLING.DELAY_MS
+    }ms между батчами`, // <--- ИСПОЛЬЗУЕМ CONFIG
     DColors.cyan
   );
 
-  const results = await fetchInBatches(coins, batchSize, (coin) =>
-    fetchFundingRateData(coin, exchange, limit, delayMs)
+  const results = await fetchInBatches(
+    coins,
+    batchSize,
+    (coin) => fetchFundingRateData(coin, exchange, limit, 0) // Передаем 0 в fetchFundingRateData
   );
 
   const successfulRaw = results.filter((r) => r.success);

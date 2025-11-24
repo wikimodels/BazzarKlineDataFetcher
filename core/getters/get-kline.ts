@@ -12,6 +12,8 @@ import {
   FailedCoinResult,
 } from "../types";
 import { logger } from "../utils/logger";
+import { sleep } from "../utils/helpers"; // <--- ДОБАВЛЕНО
+import { CONFIG } from "../config"; // <--- ДОБАВЛЕНО
 
 const BYBIT_INTERVALS: Record<TF, string> = {
   "1h": "60",
@@ -31,6 +33,7 @@ const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
 ];
+// УДАЛЕНА ЛОКАЛЬНАЯ ФУНКЦИЯ delay
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -94,7 +97,8 @@ async function fetchBinanceKlineData(
   limit: number,
   delayMs: number
 ): Promise<any> {
-  if (delayMs > 0) await delay(delayMs);
+  // delayMs больше не используется
+  // if (delayMs > 0) await delay(delayMs);
   const interval = BINANCE_INTERVALS[timeframe];
   const url = binancePerpsUrl(symbol, interval, limit);
   const randomUserAgent =
@@ -147,7 +151,8 @@ async function fetchBybitKlineData(
   limit: number,
   delayMs: number
 ): Promise<any> {
-  if (delayMs > 0) await delay(delayMs);
+  // delayMs больше не используется
+  // if (delayMs > 0) await delay(delayMs);
   const bybitInterval = BYBIT_INTERVALS[timeframe];
   const fetchLimit =
     timeframe === "8h" || timeframe === "D" ? Math.ceil(limit * 2.2) : limit;
@@ -208,9 +213,10 @@ async function fetchKlineData(
   try {
     let data: any[] = [];
     if (exchange === "binance") {
-      data = await fetchBinanceKlineData(symbol, timeframe, limit, delayMs);
+      // delayMs не передаем, т.к. задержка управляется в fetchInBatches
+      data = await fetchBinanceKlineData(symbol, timeframe, limit, 0);
     } else {
-      data = await fetchBybitKlineData(symbol, timeframe, limit, delayMs);
+      data = await fetchBybitKlineData(symbol, timeframe, limit, 0);
     }
 
     if (data.length > 0) {
@@ -254,16 +260,28 @@ async function fetchInBatches<T>(
   processor: (item: T) => Promise<any>
 ): Promise<any[]> {
   const results: any[] = [];
+  const DELAY_BETWEEN_BATCHES = CONFIG.THROTTLING.DELAY_MS; // <--- ИСПОЛЬЗУЕМ CONFIG
+  const effectiveBatchSize = CONFIG.THROTTLING.BATCH_SIZE; // <--- ИСПОЛЬЗУЕМ CONFIG
 
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
+  for (let i = 0; i < items.length; i += effectiveBatchSize) {
+    const batch = items.slice(i, i + effectiveBatchSize);
+
+    // 1. Выполняем запросы в батче ПАРАЛЛЕЛЬНО (Promise.all)
     const batchResults = await Promise.all(batch.map(processor));
     results.push(...batchResults);
 
+    // 2. Логируем прогресс
     logger.info(
-      `Progress: ${Math.min(i + batchSize, items.length)}/${items.length}`,
+      `Progress: ${Math.min(i + effectiveBatchSize, items.length)}/${
+        items.length
+      } (Batch: ${effectiveBatchSize})`,
       DColors.cyan
     );
+
+    // 3. 🛑 ГЛАВНОЕ ИСПРАВЛЕНИЕ: Ждем 400ms между батчами
+    if (i + effectiveBatchSize < items.length) {
+      await sleep(DELAY_BETWEEN_BATCHES);
+    }
   }
 
   return results;
@@ -279,17 +297,20 @@ export async function fetchKlines(
     delayMs?: number;
   }
 ): Promise<FetcherResult> {
-  const batchSize = options?.batchSize || coins.length;
-  const delayMs = options?.delayMs || 0;
+  const batchSize = options?.batchSize || CONFIG.THROTTLING.BATCH_SIZE; // <--- ИСПОЛЬЗУЕМ CONFIG
 
   logger.info(
     `Fetching ${exchange.toUpperCase()} Klines for ${
       coins.length
-    } coins [${timeframe}] | Batch: ${batchSize} | Delay: ${delayMs}ms`,
+    } coins [${timeframe}] | БАТЧ: ${
+      CONFIG.THROTTLING.BATCH_SIZE
+    } | ЗАДЕРЖКА: ${CONFIG.THROTTLING.DELAY_MS}ms между батчами`,
     DColors.cyan
   );
-  const results = await fetchInBatches(coins, batchSize, (coin) =>
-    fetchKlineData(coin.symbol, exchange, timeframe, limit, delayMs)
+  const results = await fetchInBatches(
+    coins,
+    batchSize,
+    (coin) => fetchKlineData(coin.symbol, exchange, timeframe, limit, 0) // Передаем 0 в fetchKlineData
   );
   const successfulRaw = results.filter((r) => r.success);
   const failedRaw = results.filter((r) => !r.success);

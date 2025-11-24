@@ -1,5 +1,8 @@
 import { Coin, CoinGroups } from "../types";
 
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 /**
  * Разделяет монеты по биржам
  */
