@@ -1,29 +1,23 @@
 {
   "compilerOptions": {
-    /* ----- Основные опции ----- */
     "target": "ES2020",
-    "module": "CommonJS",
-    "lib": ["ES2020"],
+    "module": "commonjs",
+    
+    /* ВАЖНО: Это исправляет "Cannot find name 'console'" и "setTimeout".
+      TypeScript будет знать о стандартных возможностях ES2020 и "DOM" (где живет console/setTimeout).
+    */
+    "lib": ["ES2020", "DOM"],
+
     "outDir": "./dist",
     "rootDir": "./",
-
-    /* ----- Совместимость ----- */
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "node",
-
-    /* ----- Строгость ----- */
     "strict": true,
+    "esModuleInterop": true,
     "skipLibCheck": true,
-
-    /* ----- Дополнительно (для отладки) ----- */
-    "sourceMap": true
+    "forceConsistentCasingInFileNames": true
   },
-  "include": [
-    "**/*.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist"
-  ]
+  /* ВАЖНО: Говорим TypeScript компилировать все .ts файлы 
+    и игнорировать node_modules / dist.
+  */
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.spec.ts"]
 }
