@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    /* ----- Основные опции ----- */
+    "target": "ES2020", // Целевая версия (Node.js 16+ поддерживает это)
+    "module": "CommonJS", // Система модулей для Node.js/Express
+    "outDir": "./dist", // Куда компилировать JS (для Render)
+    "rootDir": "./", // Где лежат исходники .ts
+
+    /* ----- Совместимость ----- */
+    "esModuleInterop": true, // Для совместимости импорта (import express from 'express')
+    "forceConsistentCasingInFileNames": true,
+
+    /* ----- Строгость ----- */
+    "strict": true, // Включает все строгие проверки
+    "skipLibCheck": true, // Пропускать проверку .d.ts файлов (ускоряет сборку)
+
+    /* ----- Дополнительно (для отладки) ----- */
+    "sourceMap": true // Генерировать .map.js файлы для отладки
+  },
+  "include": [
+    "**/*.ts" // Включить все TypeScript файлы в проекте
+  ],
+  "exclude": [
+    "node_modules", // Исключить папку node_modules
+    "dist" // Исключить папку, куда идет сборка
+  ]
+}
