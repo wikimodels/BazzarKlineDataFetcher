@@ -1,10 +1,8 @@
 // @ts-ignore-file
 import { fetchCoins } from "../core/fetchers/coin-fetcher";
-import { fetchFR } from "../core/fetchers/fr-fetchers";
 import { fetchKlineData } from "../core/fetchers/kline-fetchers";
 import { fetchOI } from "../core/fetchers/oi-fetchers";
-import { combineCoinResults } from "../core/processors/combiner";
-import { enrichKlines, trimCandles } from "../core/processors/enricher";
+import { enrichKlines } from "../core/processors/enricher";
 import { JobResult, TF, DColors } from "../core/types";
 import {
   splitCoinsByExchange,
@@ -18,17 +16,12 @@ import { CONFIG } from "../core/config";
 /**
  * Cron Job для 12h таймфрейма
  *
- * Алгоритм (Оптимизированный):
- * 1. Fetch 1h OI data (CONFIG.OI.h1_GLOBAL)
- * 2. Fetch FR data (CONFIG.FR.h4_RECENT)
- * 3. Fetch 1h Kline data (CONFIG.KLINE.h1)
- * 4. Fetch 4h Kline data (CONFIG.KLINE.h4_BASE) → BASE SET for 4h/8h
- * 5. Fetch 12h Kline data (CONFIG.KLINE.h12_DIRECT) → Прямой запрос
- * 6. Process:
- * - 1h + OI → save to 1h
- * - 4h (last 400 from BASE) + OI + FR → save to 4h
- * - 8h (combined from 4h BASE 800) + OI + FR → save to 8h
- * - 12h (direct 400) + OI → save to 12h (no FR!)
+ * Алгоритм:
+ * 1. Fetch 1h OI data
+ * 2. Fetch 1h Kline data
+ * 3. Enrich 1h + OI → save to 1h
+ * 4. Fetch 12h Kline data (прямой запрос)
+ * 5. Enrich 12h + OI → save to 12h
  */
 export async function run12hJob(): Promise<JobResult> {
   const startTime = Date.now();
@@ -39,10 +32,9 @@ export async function run12hJob(): Promise<JobResult> {
   logger.info(`[JOB 12h] Starting job for ${coins.length} coins`, DColors.cyan);
 
   try {
-    // 1. Split coins by exchange
     const coinGroups = splitCoinsByExchange(coins);
 
-    // 2. Fetch OI 1h (720 candles)
+    // Fetch OI 1h
     const oi1hResult = await fetchOI(
       coinGroups,
       "1h" as TF,
@@ -56,16 +48,7 @@ export async function run12hJob(): Promise<JobResult> {
       errors.push(`OI fetch failed for ${oi1hResult.failed.length} coins`);
     }
 
-    // // 3. Fetch FR (401 candles)
-    // const frResult = await fetchFR(coinGroups, CONFIG.FR.h4_RECENT, {
-    //   batchSize: 50,
-    //   delayMs: 100,
-    // });
-    // if (frResult.failed.length > 0) {
-    //   errors.push(`FR fetch failed for ${frResult.failed.length} coins`);
-    // }
-
-    // 4. Fetch Klines 1h (400 candles)
+    // Fetch Klines 1h
     const kline1hResult = await fetchKlineData(
       coinGroups,
       "1h" as TF,
@@ -81,23 +64,22 @@ export async function run12hJob(): Promise<JobResult> {
       );
     }
 
-    // // 5. Fetch Klines 4h (801 candles) → BASE SET for 4h/8h
-    // const kline4hBaseResult = await fetchKlineData(
-    //   coinGroups,
-    //   "4h" as TF,
-    //   CONFIG.KLINE.h4_BASE,
-    //   {
-    //     batchSize: 50,
-    //     delayMs: 100,
-    //   }
-    // );
-    // if (kline4hBaseResult.failed.length > 0) {
-    //   errors.push(
-    //     `4h Kline fetch failed for ${kline4hBaseResult.failed.length} coins`
-    //   );
-    // }
+    // Enrich 1h + OI → save
+    const enriched1h = enrichKlines(
+      kline1hResult.successful,
+      oi1hResult,
+      "1h" as TF
+    );
 
-    // 6. Fetch Klines 12h (401 candles) → Прямой запрос (ОПТИМИЗАЦИЯ)
+    await RedisStore.save("1h" as TF, {
+      timeframe: "1h" as TF,
+      openTime: getCurrentCandleTime(TIMEFRAME_MS["1h"]),
+      updatedAt: Date.now(),
+      coinsNumber: enriched1h.length,
+      data: enriched1h,
+    });
+
+    // Fetch Klines 12h
     const kline12hDirectResult = await fetchKlineData(
       coinGroups,
       "12h" as TF,
@@ -113,61 +95,13 @@ export async function run12hJob(): Promise<JobResult> {
       );
     }
 
-    // 7. Enrich 1h + OI → save
-    const enriched1h = enrichKlines(
-      kline1hResult.successful,
-      oi1hResult,
-      "1h" as TF
-    );
-    await RedisStore.save("1h" as TF, {
-      timeframe: "1h" as TF,
-      openTime: getCurrentCandleTime(TIMEFRAME_MS["1h"]),
-      updatedAt: Date.now(),
-      coinsNumber: enriched1h.length,
-      data: enriched1h,
-    });
-
-    // // 8. 4h (last 400 from BASE) + OI + FR → save
-    // const kline4hTrimmed = trimCandles(
-    //   kline4hBaseResult.successful,
-    //   CONFIG.SAVE_LIMIT
-    // );
-    // const enriched4h = enrichKlines(
-    //   kline4hTrimmed,
-    //   oi1hResult,
-    //   "4h" as TF,
-    //   frResult
-    // );
-    // await RedisStore.save("4h" as TF, {
-    //   timeframe: "4h" as TF,
-    //   openTime: getCurrentCandleTime(TIMEFRAME_MS["4h"]),
-    //   updatedAt: Date.now(),
-    //   coinsNumber: enriched4h.length,
-    //   data: enriched4h,
-    // });
-
-    // // 9. 8h (combined from 4h BASE 800) + OI + FR → save
-    // const kline8hCombined = combineCoinResults(kline4hBaseResult.successful);
-    // const enriched8h = enrichKlines(
-    //   kline8hCombined,
-    //   oi1hResult,
-    //   "8h" as TF,
-    //   frResult
-    // );
-    // await RedisStore.save("8h" as TF, {
-    //   timeframe: "8h" as TF,
-    //   openTime: getCurrentCandleTime(TIMEFRAME_MS["8h"]),
-    //   updatedAt: Date.now(),
-    //   coinsNumber: enriched8h.length,
-    //   data: enriched8h,
-    // });
-
-    // 10. 12h (direct 400) + OI → save (NO FR!)
+    // Enrich 12h + OI → save
     const enriched12h = enrichKlines(
       kline12hDirectResult.successful,
       oi1hResult,
       "12h" as TF
     );
+
     await RedisStore.save("12h" as TF, {
       timeframe: "12h" as TF,
       openTime: getCurrentCandleTime(TIMEFRAME_MS["12h"]),
@@ -177,11 +111,6 @@ export async function run12hJob(): Promise<JobResult> {
     });
 
     const executionTime = Date.now() - startTime;
-
-    // logger.info(
-    //   `[JOB 12h] ✓ Completed in ${executionTime}ms | Saved 1h: ${enriched1h.length}, 4h: ${enriched4h.length}, 8h: ${enriched8h.length}, 12h: ${enriched12h.length} coins`,
-    //   DColors.green
-    // );
 
     logger.info(
       `[JOB 12h] ✓ Completed in ${executionTime}ms | Saved 1h: ${enriched1h.length}, 12h: ${enriched12h.length} coins`,

@@ -19,9 +19,11 @@ export class RedisStore {
 
     // --- ИЗМЕНЕНО: Deno.env.get -> process.env ---
     const url =
-      process.env.UPSTASH_REDIS_REST_URL || process.env.UPSTASH_REDIS_URL;
+      process.env.BAZZAR_UPSTASH_REDIS_REST_URL ||
+      process.env.BAZZAR_UPSTASH_REDIS_URL;
     const token =
-      process.env.UPSTASH_REDIS_REST_TOKEN || process.env.UPSTASH_REDIS_TOKEN;
+      process.env.BAZZAR_UPSTASH_REDIS_REST_TOKEN ||
+      process.env.BAZZAR_UPSTASH_REDIS_TOKEN;
     // ---
 
     if (!url || !token) {

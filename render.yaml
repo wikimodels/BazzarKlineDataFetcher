@@ -14,8 +14,6 @@ services:
 
     # ⬇️ СЮДА НУЖНО ДОБАВИТЬ СЕКРЕТЫ (см. ниже)
     envVars:
-      - key: NODE_ENV
-        value: production
       # - key: SECRET_TOKEN
       #   fromSecret: true # ⬅️ См. инструкцию ниже
       # - key: UPSTASH_REDIS_REST_URL
