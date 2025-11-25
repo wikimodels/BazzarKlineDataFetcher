@@ -222,29 +222,6 @@ app.use((req: Request, res: Response) => {
 // —————————————————————————————————————————————
 
 const startServer = async () => {
-  try {
-    // 1. Всегда запускаем run1dJob() при старте
-    logger.info(
-      "[SERVER] Запускаю run1dJob() для инициализации/обновления кэша...",
-      DColors.yellow
-    );
-    await run1dJob(); // <--- Ждем завершения
-    logger.info(
-      "[SERVER] ✓ Инициализация/обновление кэша завершена.",
-      DColors.green
-    );
-  } catch (error: any) {
-    // 2. Логируем ошибку, но НЕ ПАДАЕМ
-    logger.error(
-      `[SERVER] ❌ Ошибка при инициализации: ${error.message}`,
-      error
-    );
-    logger.info(
-      "[SERVER] Сервер продолжит работу. API будет использовать lazy loading.",
-      DColors.yellow
-    );
-  }
-
   // 3. Запускаем Express-сервер в любом случае
   app.listen(PORT, () => {
     logger.info(
