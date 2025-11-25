@@ -18,10 +18,12 @@ import { CONFIG } from "../core/config";
  *
  * Алгоритм:
  * 1. Fetch 1h OI data
- * 2. Fetch 1h Kline data
- * 3. Enrich 1h + OI → save to 1h
- * 4. Fetch 12h Kline data (прямой запрос)
- * 5. Enrich 12h + OI → save to 12h
+ * 2. Wait CONFIG.DELAYS.DELAY_BTW_TASKS
+ * 3. Fetch 1h Kline data
+ * 4. Enrich 1h + OI → save to 1h
+ * 5. Wait CONFIG.DELAYS.DELAY_BTW_TASKS
+ * 6. Fetch 12h Kline data
+ * 7. Enrich 12h + OI → save to 12h
  */
 export async function run12hJob(): Promise<JobResult> {
   const startTime = Date.now();
@@ -33,6 +35,7 @@ export async function run12hJob(): Promise<JobResult> {
 
   try {
     const coinGroups = splitCoinsByExchange(coins);
+    let stepTime = Date.now();
 
     // Fetch OI 1h
     const oi1hResult = await fetchOI(
@@ -47,6 +50,18 @@ export async function run12hJob(): Promise<JobResult> {
     if (oi1hResult.failed.length > 0) {
       errors.push(`OI fetch failed for ${oi1hResult.failed.length} coins`);
     }
+
+    logger.info(
+      `[JOB 12h] ✓ Fetched OI in ${Date.now() - stepTime}ms`,
+      DColors.green
+    );
+
+    // Wait
+    await new Promise((resolve) =>
+      setTimeout(resolve, CONFIG.DELAYS.DELAY_BTW_TASKS)
+    );
+
+    stepTime = Date.now();
 
     // Fetch Klines 1h
     const kline1hResult = await fetchKlineData(
@@ -64,7 +79,14 @@ export async function run12hJob(): Promise<JobResult> {
       );
     }
 
+    logger.info(
+      `[JOB 12h] ✓ Fetched 1h Klines in ${Date.now() - stepTime}ms`,
+      DColors.green
+    );
+
     // Enrich 1h + OI → save
+    stepTime = Date.now();
+
     const enriched1h = enrichKlines(
       kline1hResult.successful,
       oi1hResult,
@@ -78,6 +100,20 @@ export async function run12hJob(): Promise<JobResult> {
       coinsNumber: enriched1h.length,
       data: enriched1h,
     });
+
+    logger.info(
+      `[JOB 12h] ✓ Saved 1h: ${enriched1h.length} coins in ${
+        Date.now() - stepTime
+      }ms`,
+      DColors.green
+    );
+
+    // Wait
+    await new Promise((resolve) =>
+      setTimeout(resolve, CONFIG.DELAYS.DELAY_BTW_TASKS)
+    );
+
+    stepTime = Date.now();
 
     // Fetch Klines 12h
     const kline12hDirectResult = await fetchKlineData(
@@ -95,7 +131,14 @@ export async function run12hJob(): Promise<JobResult> {
       );
     }
 
+    logger.info(
+      `[JOB 12h] ✓ Fetched 12h Klines in ${Date.now() - stepTime}ms`,
+      DColors.green
+    );
+
     // Enrich 12h + OI → save
+    stepTime = Date.now();
+
     const enriched12h = enrichKlines(
       kline12hDirectResult.successful,
       oi1hResult,
@@ -110,10 +153,17 @@ export async function run12hJob(): Promise<JobResult> {
       data: enriched12h,
     });
 
+    logger.info(
+      `[JOB 12h] ✓ Saved 12h: ${enriched12h.length} coins in ${
+        Date.now() - stepTime
+      }ms`,
+      DColors.green
+    );
+
     const executionTime = Date.now() - startTime;
 
     logger.info(
-      `[JOB 12h] ✓ Completed in ${executionTime}ms | Saved 1h: ${enriched1h.length}, 12h: ${enriched12h.length} coins`,
+      `[JOB 12h] ✓ Completed in ${executionTime}ms | 1h: ${enriched1h.length}, 12h: ${enriched12h.length} coins`,
       DColors.green
     );
 

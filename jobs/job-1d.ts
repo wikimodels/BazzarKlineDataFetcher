@@ -20,8 +20,10 @@ import { CONFIG } from "../core/config";
  * Алгоритм:
  * 1. Fetch 1h OI data
  * 2. Fetch 1h Kline data → Enrich + Save 1h
- * 3. Fetch 12h Kline data (BASE SET) → Trim + Enrich + Save 12h
- * 4. Combine 12h BASE → Enrich + Save 1D
+ * 3. Wait CONFIG.DELAYS.DELAY_BTW_TASKS
+ * 4. Fetch 12h Kline data (BASE SET) → Trim + Enrich + Save 12h
+ * 5. Wait CONFIG.DELAYS.DELAY_BTW_TASKS
+ * 6. Combine 12h BASE → Enrich + Save 1D
  */
 export async function run1dJob(): Promise<JobResult> {
   const startTime = Date.now();
@@ -76,11 +78,18 @@ export async function run1dJob(): Promise<JobResult> {
       data: enriched1h,
     });
 
-    stepTime = Date.now() - stepTime;
     logger.info(
-      `[JOB 1D] ✓ Saved 1h: ${enriched1h.length} coins in ${stepTime}ms`,
+      `[JOB 1D] ✓ Saved 1h: ${enriched1h.length} coins in ${
+        Date.now() - stepTime
+      }ms`,
       DColors.green
     );
+
+    // Wait
+    await new Promise((resolve) =>
+      setTimeout(resolve, CONFIG.DELAYS.DELAY_BTW_TASKS)
+    );
+
     stepTime = Date.now();
 
     // Fetch Klines 12h (BASE SET)
@@ -116,11 +125,13 @@ export async function run1dJob(): Promise<JobResult> {
       data: enriched12h,
     });
 
-    stepTime = Date.now() - stepTime;
     logger.info(
-      `[JOB 1D] ✓ Saved 12h: ${enriched12h.length} coins in ${stepTime}ms`,
+      `[JOB 1D] ✓ Saved 12h: ${enriched12h.length} coins in ${
+        Date.now() - stepTime
+      }ms`,
       DColors.green
     );
+
     stepTime = Date.now();
 
     // Combine + Enrich 1D + OI → Save
