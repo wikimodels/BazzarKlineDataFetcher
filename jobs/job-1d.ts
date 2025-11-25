@@ -18,13 +18,10 @@ import { CONFIG } from "../core/config";
  * Cron Job для 1D таймфрейма
  *
  * Алгоритм:
- * 1. Fetch 1h OI data (CONFIG.OI.h1_GLOBAL)
- * 2. Fetch 1h Kline data (CONFIG.KLINE.h1)
- * 3. Fetch 12h Kline data (CONFIG.KLINE.h12_BASE) → BASE SET for 12h/1D
- * 4. Process and save:
- *    - 1h + OI → save to 1h
- *    - 12h (last 400 from BASE) + OI → save to 12h
- *    - 1D (combined from BASE 800) + OI → save to 1D
+ * 1. Fetch 1h OI data
+ * 2. Fetch 1h Kline data → Enrich + Save 1h
+ * 3. Fetch 12h Kline data (BASE SET) → Trim + Enrich + Save 12h
+ * 4. Combine 12h BASE → Enrich + Save 1D
  */
 export async function run1dJob(): Promise<JobResult> {
   const startTime = Date.now();
@@ -38,10 +35,10 @@ export async function run1dJob(): Promise<JobResult> {
       DColors.cyan
     );
 
-    // Split coins by exchange
     const coinGroups = splitCoinsByExchange(coins);
+    let stepTime = Date.now();
 
-    // Fetch OI 1h (720 candles)
+    // Fetch OI 1h
     const oi1hResult = await fetchOI(coinGroups, "1h", CONFIG.OI.h1_GLOBAL, {
       batchSize: 50,
       delayMs: 100,
@@ -51,7 +48,7 @@ export async function run1dJob(): Promise<JobResult> {
       errors.push(`OI fetch failed for ${oi1hResult.failed.length} coins`);
     }
 
-    // Fetch Klines 1h (400 candles)
+    // Fetch Klines 1h
     const kline1hResult = await fetchKlineData(
       coinGroups,
       "1h",
@@ -68,7 +65,25 @@ export async function run1dJob(): Promise<JobResult> {
       );
     }
 
-    // Fetch Klines 12h (801 candles) → BASE SET for 12h/1D
+    // Enrich 1h + OI → Save
+    const enriched1h = enrichKlines(kline1hResult.successful, oi1hResult, "1h");
+
+    await RedisStore.save("1h", {
+      timeframe: "1h",
+      openTime: getCurrentCandleTime(TIMEFRAME_MS["1h"]),
+      updatedAt: Date.now(),
+      coinsNumber: enriched1h.length,
+      data: enriched1h,
+    });
+
+    stepTime = Date.now() - stepTime;
+    logger.info(
+      `[JOB 1D] ✓ Saved 1h: ${enriched1h.length} coins in ${stepTime}ms`,
+      DColors.green
+    );
+    stepTime = Date.now();
+
+    // Fetch Klines 12h (BASE SET)
     const kline12hBaseResult = await fetchKlineData(
       coinGroups,
       "12h",
@@ -85,23 +100,7 @@ export async function run1dJob(): Promise<JobResult> {
       );
     }
 
-    // Enrich 1h + OI
-    const enriched1h = enrichKlines(kline1hResult.successful, oi1hResult, "1h");
-
-    await RedisStore.save("1h", {
-      timeframe: "1h",
-      openTime: getCurrentCandleTime(TIMEFRAME_MS["1h"]),
-      updatedAt: Date.now(),
-      coinsNumber: enriched1h.length,
-      data: enriched1h,
-    });
-
-    logger.info(
-      `[JOB 1D] ✓ Saved 1h: ${enriched1h.length} coins`,
-      DColors.green
-    );
-
-    // Enrich 12h + OI (last 400 from 12h BASE)
+    // Trim + Enrich 12h + OI → Save
     const kline12hTrimmed = trimCandles(
       kline12hBaseResult.successful,
       CONFIG.SAVE_LIMIT
@@ -117,12 +116,14 @@ export async function run1dJob(): Promise<JobResult> {
       data: enriched12h,
     });
 
+    stepTime = Date.now() - stepTime;
     logger.info(
-      `[JOB 1D] ✓ Saved 12h: ${enriched12h.length} coins`,
+      `[JOB 1D] ✓ Saved 12h: ${enriched12h.length} coins in ${stepTime}ms`,
       DColors.green
     );
+    stepTime = Date.now();
 
-    // Enrich 1D + OI (combined from 12h BASE 800)
+    // Combine + Enrich 1D + OI → Save
     const kline1dCombined = combineCoinResults(kline12hBaseResult.successful);
 
     const enriched1d = enrichKlines(kline1dCombined, oi1hResult, "D");
@@ -135,10 +136,17 @@ export async function run1dJob(): Promise<JobResult> {
       data: enriched1d,
     });
 
+    logger.info(
+      `[JOB 1D] ✓ Saved 1D: ${enriched1d.length} coins in ${
+        Date.now() - stepTime
+      }ms`,
+      DColors.green
+    );
+
     const executionTime = Date.now() - startTime;
 
     logger.info(
-      `[JOB 1D] ✓ Completed in ${executionTime}ms | Saved 1D: ${enriched1d.length} coins`,
+      `[JOB 1D] ✓ Completed in ${executionTime}ms | 1h: ${enriched1h.length}, 12h: ${enriched12h.length}, 1D: ${enriched1d.length} coins`,
       DColors.green
     );
 
