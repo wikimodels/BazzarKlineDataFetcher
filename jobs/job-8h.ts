@@ -12,142 +12,159 @@ import {
   TIMEFRAME_MS,
 } from "../core/utils/helpers";
 import { logger } from "../core/utils/logger";
-import { RedisStore } from "../redis-store";
+import { DataStore } from "../store/store"; // <--- ИЗМЕНЕНИЕ: импорт DataStore
 import { CONFIG } from "../core/config";
 
 /**
  * Cron Job для 8h таймфрейма
  *
  * Алгоритм:
- * 1. Fetch 1h OI data (CONFIG.OI.h1_GLOBAL)
- * 2. Fetch FR data (CONFIG.FR.h4_RECENT)
- * 3. Fetch 1h Kline data (CONFIG.KLINE.h1)
- * 4. Fetch 4h Kline data (CONFIG.KLINE.h4_BASE) → BASE SET
- * 5. Process:
- * - 1h + OI → save to 1h
- * - 4h (last 400 from BASE) + OI + FR → save to 4h
- * - 8h (combined from BASE 800) + OI + FR → save to 8h
+ * 1. Fetch 1h OI data
+ * 2. Wait CONFIG.DELAYS.DELAY_BTW_TASKS
+ * 3. Fetch FR data
+ * 4. Wait CONFIG.DELAYS.DELAY_BTW_TASKS
+ * 5. Fetch 4h Kline data (BASE SET)
+ * 6. Process and save 4h + 8h
  */
 export async function run8hJob(): Promise<JobResult> {
   const startTime = Date.now();
-  const timeframe: TF = "8h" as TF;
+  const timeframe: TF = "8h";
   const errors: string[] = [];
 
-  const coins = await fetchCoins();
-  logger.info(`[JOB 8h] Starting job for ${coins.length} coins`, DColors.cyan);
-
   try {
-    // 1. Split coins by exchange
-    const coinGroups = splitCoinsByExchange(coins);
-
-    // 2. Fetch OI 1h (720 candles)
-    const oi1hResult = await fetchOI(
-      coinGroups,
-      "1h" as TF,
-      CONFIG.OI.h1_GLOBAL,
-      {
-        batchSize: 50,
-        delayMs: 100,
-      }
+    const coins = await fetchCoins();
+    logger.info(
+      `[JOB 8h] Starting job for ${coins.length} coins`,
+      DColors.cyan
     );
+
+    const coinGroups = splitCoinsByExchange(coins);
+    let stepTime = Date.now();
+
+    // Fetch OI 1h
+    const oi1hResult = await fetchOI(coinGroups, "1h", CONFIG.OI.h1_GLOBAL, {
+      batchSize: 10,
+      delayMs: 200,
+    });
+
     if (oi1hResult.failed.length > 0) {
       errors.push(`OI fetch failed for ${oi1hResult.failed.length} coins`);
     }
 
-    // 3. Fetch FR (401 candles)
+    logger.info(
+      `[JOB 8h] ✓ Fetched OI in ${Date.now() - stepTime}ms`,
+      DColors.green
+    );
+
+    // Wait
+    await new Promise((resolve) =>
+      setTimeout(resolve, CONFIG.DELAYS.DELAY_BTW_TASKS)
+    );
+
+    stepTime = Date.now();
+
+    // Fetch FR data
     const frResult = await fetchFR(coinGroups, CONFIG.FR.h4_RECENT, {
-      batchSize: 50,
-      delayMs: 100,
+      batchSize: 10,
+      delayMs: 200,
     });
+
     if (frResult.failed.length > 0) {
       errors.push(`FR fetch failed for ${frResult.failed.length} coins`);
     }
 
-    // 4. Fetch Klines 1h (400 candles)
-    const kline1hResult = await fetchKlineData(
-      coinGroups,
-      "1h" as TF,
-      CONFIG.KLINE.h1,
-      {
-        batchSize: 50,
-        delayMs: 100,
-      }
+    logger.info(
+      `[JOB 8h] ✓ Fetched FR in ${Date.now() - stepTime}ms`,
+      DColors.green
     );
-    if (kline1hResult.failed.length > 0) {
-      errors.push(
-        `1h Kline fetch failed for ${kline1hResult.failed.length} coins`
-      );
-    }
 
-    // 5. Fetch Klines 4h (801 candles) → BASE SET
+    // Wait
+    await new Promise((resolve) =>
+      setTimeout(resolve, CONFIG.DELAYS.DELAY_BTW_TASKS)
+    );
+
+    stepTime = Date.now();
+
+    // Fetch Klines 4h (BASE SET)
     const kline4hBaseResult = await fetchKlineData(
       coinGroups,
-      "4h" as TF,
+      "4h",
       CONFIG.KLINE.h4_BASE,
       {
-        batchSize: 50,
-        delayMs: 100,
+        batchSize: 10,
+        delayMs: 200,
       }
     );
+
     if (kline4hBaseResult.failed.length > 0) {
       errors.push(
         `4h Kline fetch failed for ${kline4hBaseResult.failed.length} coins`
       );
     }
 
-    // 6. Enrich 1h + OI → save
-    const enriched1h = enrichKlines(
-      kline1hResult.successful,
-      oi1hResult,
-      "1h" as TF
+    logger.info(
+      `[JOB 8h] ✓ Fetched Klines in ${Date.now() - stepTime}ms`,
+      DColors.green
     );
-    await RedisStore.save("1h" as TF, {
-      timeframe: "1h" as TF,
-      openTime: getCurrentCandleTime(TIMEFRAME_MS["1h"]),
-      updatedAt: Date.now(),
-      coinsNumber: enriched1h.length,
-      data: enriched1h,
-    });
 
-    // 7. Take last 400 from BASE SET → 4h + OI + FR → save
+    // Trim + Enrich 4h + OI + FR → Save
+    stepTime = Date.now();
+
     const kline4hTrimmed = trimCandles(
       kline4hBaseResult.successful,
       CONFIG.SAVE_LIMIT
     );
-    const enriched4h = enrichKlines(
-      kline4hTrimmed,
-      oi1hResult,
-      "4h" as TF,
-      frResult
-    );
-    await RedisStore.save("4h" as TF, {
-      timeframe: "4h" as TF,
+
+    const enriched4h = enrichKlines(kline4hTrimmed, oi1hResult, "4h", frResult);
+
+    await DataStore.save("4h", {
+      // <--- ИЗМЕНЕНИЕ: RedisStore -> DataStore
+      timeframe: "4h",
       openTime: getCurrentCandleTime(TIMEFRAME_MS["4h"]),
       updatedAt: Date.now(),
       coinsNumber: enriched4h.length,
       data: enriched4h,
     });
 
-    // 8. Combine BASE SET (800) → 8h (400) + OI + FR → save
+    logger.info(
+      `[JOB 8h] ✓ Saved 4h: ${enriched4h.length} coins in ${
+        Date.now() - stepTime
+      }ms`,
+      DColors.green
+    );
+
+    // Combine + Enrich 8h + OI + FR → Save
+    stepTime = Date.now();
+
     const kline8hCombined = combineCoinResults(kline4hBaseResult.successful);
+
     const enriched8h = enrichKlines(
       kline8hCombined,
       oi1hResult,
-      "8h" as TF,
+      "8h",
       frResult
     );
-    await RedisStore.save("8h" as TF, {
-      timeframe: "8h" as TF,
+
+    await DataStore.save("8h", {
+      // <--- ИЗМЕНЕНИЕ: RedisStore -> DataStore
+      timeframe: "8h",
       openTime: getCurrentCandleTime(TIMEFRAME_MS["8h"]),
       updatedAt: Date.now(),
       coinsNumber: enriched8h.length,
       data: enriched8h,
     });
 
+    logger.info(
+      `[JOB 8h] ✓ Saved 8h: ${enriched8h.length} coins in ${
+        Date.now() - stepTime
+      }ms`,
+      DColors.green
+    );
+
     const executionTime = Date.now() - startTime;
 
     logger.info(
-      `[JOB 8h] ✓ Completed in ${executionTime}ms | Saved 1h: ${enriched1h.length}, 4h: ${enriched4h.length}, 8h: ${enriched8h.length} coins`,
+      `[JOB 8h] ✓ Completed in ${executionTime}ms | 4h: ${enriched4h.length} coins, 8h: ${enriched8h.length} coins`,
       DColors.green
     );
 
@@ -163,12 +180,13 @@ export async function run8hJob(): Promise<JobResult> {
   } catch (error: any) {
     const executionTime = Date.now() - startTime;
     logger.error(`[JOB 8h] Failed: ${error.message}`, DColors.red);
+
     return {
       success: false,
       timeframe,
-      totalCoins: coins.length,
+      totalCoins: 0,
       successfulCoins: 0,
-      failedCoins: coins.length,
+      failedCoins: 0,
       errors: [error.message, ...errors],
       executionTime,
     };

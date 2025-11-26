@@ -7,7 +7,7 @@ import { run4hJob } from "./jobs/job-4h";
 import { run8hJob } from "./jobs/job-8h";
 import { run12hJob } from "./jobs/job-12h";
 import { run1dJob } from "./jobs/job-1d";
-import { RedisStore } from "./redis-store";
+import { DataStore } from "./store/store"; // <--- ИЗМЕНЕНИЕ: импорт DataStore
 import { TF, JobResult, DColors, TF_MAP, MarketData } from "./core/types";
 import { logger } from "./core/utils/logger";
 
@@ -25,8 +25,8 @@ if (!SECRET_TOKEN) {
   process.exit(1);
 }
 
-// Инициализируем Redis при старте
-RedisStore.init();
+// Инициализируем выбранное хранилище при старте
+DataStore.init(); // <--- ИЗМЕНЕНИЕ: RedisStore -> DataStore
 
 // Карта для запуска работ по API
 const jobs: Record<string, () => Promise<JobResult>> = {
@@ -65,7 +65,7 @@ app.get("/api/cache/:tf", checkAuth, async (req: Request, res: Response) => {
 
     // 1. Обработка "all" (Happy Path 1)
     if (tf === "all") {
-      const allData = await RedisStore.getAll();
+      const allData = await DataStore.getAll(); // <--- ИЗМЕНЕНИЕ: RedisStore -> DataStore
       return res.status(200).json({ success: true, data: allData });
     }
 
@@ -77,7 +77,7 @@ app.get("/api/cache/:tf", checkAuth, async (req: Request, res: Response) => {
     const timeframe = tf as TF;
 
     // 3. Получаем кэш (Happy Path 2)
-    const cachedData = await RedisStore.get(timeframe);
+    const cachedData = await DataStore.get(timeframe); // <--- ИЗМЕНЕНИЕ: RedisStore -> DataStore
 
     if (cachedData) {
       // Данные есть - отдаём, не проверяя возраст.
@@ -93,7 +93,6 @@ app.get("/api/cache/:tf", checkAuth, async (req: Request, res: Response) => {
     return res.status(404).json({
       error: `No cache found for timeframe: ${timeframe}`,
     });
-    
   } catch (e: any) {
     const errorMsg = e instanceof Error ? e.message : String(e);
     logger.error(`[API] Error in cache endpoint: ${errorMsg}`, e);
@@ -134,7 +133,7 @@ app.get(
       const tf = "1h" as TF;
       const symbolToFind = "BTCUSDT";
 
-      const cache1h = await RedisStore.get(tf);
+      const cache1h = await DataStore.get(tf); // <--- ИЗМЕНЕНИЕ: RedisStore -> DataStore
 
       if (!cache1h || !cache1h.data) {
         return res.status(404).json({

@@ -10,7 +10,7 @@ import {
   TIMEFRAME_MS,
 } from "../core/utils/helpers";
 import { logger } from "../core/utils/logger";
-import { RedisStore } from "../redis-store";
+import { DataStore } from "../store/store"; // <--- ИЗМЕНЕНИЕ: импорт DataStore
 import { CONFIG } from "../core/config";
 
 /**
@@ -18,10 +18,10 @@ import { CONFIG } from "../core/config";
  * Запускается каждый час (кроме 0, 4, 8, 12, 20)
  *
  * Алгоритм:
- * 1. Fetch 1h OI data
- * 2. Wait CONFIG.DELAYS.DELAY_BTW_TASKS
- * 3. Fetch 1h Kline data
- * 4. Enrich and save 1h + OI
+ * 1. Fetch 1h OI data (CONFIG.OI.h1_GLOBAL)
+ * 2. Fetch 1h Kline data (CONFIG.KLINE.h1)
+ * 3. Enrich and save:
+ * - 1h + OI → save to 1h
  */
 export async function run1hJob(): Promise<JobResult> {
   const startTime = Date.now();
@@ -32,10 +32,10 @@ export async function run1hJob(): Promise<JobResult> {
   logger.info(`[JOB 1h] Starting job for ${coins.length} coins`, DColors.cyan);
 
   try {
+    // 1. Split coins by exchange
     const coinGroups = splitCoinsByExchange(coins);
-    let stepTime = Date.now();
 
-    // Fetch OI 1h
+    // 2. Fetch OI 1h (720 candles)
     const oi1hResult = await fetchOI(
       coinGroups,
       "1h" as TF,
@@ -49,19 +49,7 @@ export async function run1hJob(): Promise<JobResult> {
       errors.push(`OI fetch failed for ${oi1hResult.failed.length} coins`);
     }
 
-    logger.info(
-      `[JOB 1h] ✓ Fetched OI in ${Date.now() - stepTime}ms`,
-      DColors.green
-    );
-
-    // Wait
-    await new Promise((resolve) =>
-      setTimeout(resolve, CONFIG.DELAYS.DELAY_BTW_TASKS)
-    );
-
-    stepTime = Date.now();
-
-    // Fetch Klines 1h
+    // 3. Fetch Klines 1h (400 candles)
     const kline1hResult = await fetchKlineData(
       coinGroups,
       "1h" as TF,
@@ -71,27 +59,23 @@ export async function run1hJob(): Promise<JobResult> {
         delayMs: 100,
       }
     );
+
     if (kline1hResult.failed.length > 0) {
       errors.push(
         `1h Kline fetch failed for ${kline1hResult.failed.length} coins`
       );
     }
 
-    logger.info(
-      `[JOB 1h] ✓ Fetched 1h Klines in ${Date.now() - stepTime}ms`,
-      DColors.green
-    );
-
-    // Enrich 1h + OI → save
-    stepTime = Date.now();
-
+    // 4. Enrich 1h + OI → save (no FR for 1h job)
     const enriched1h = enrichKlines(
       kline1hResult.successful,
       oi1hResult,
       "1h" as TF
     );
 
-    await RedisStore.save("1h" as TF, {
+    // 5. Save ONLY 1h to DataStore
+    await DataStore.save("1h" as TF, {
+      // <--- ИЗМЕНЕНИЕ: RedisStore -> DataStore
       timeframe: "1h" as TF,
       openTime: getCurrentCandleTime(TIMEFRAME_MS["1h"]),
       updatedAt: Date.now(),
@@ -99,16 +83,12 @@ export async function run1hJob(): Promise<JobResult> {
       data: enriched1h,
     });
 
-    logger.info(
-      `[JOB 1h] ✓ Saved 1h: ${enriched1h.length} coins in ${
-        Date.now() - stepTime
-      }ms`,
-      DColors.green
-    );
-
     const executionTime = Date.now() - startTime;
 
-    logger.info(`[JOB 1h] ✓ Completed in ${executionTime}ms`, DColors.green);
+    logger.info(
+      `[JOB 1h] ✓ Completed in ${executionTime}ms | Saved 1h: ${enriched1h.length} coins`,
+      DColors.green
+    );
 
     return {
       success: true,

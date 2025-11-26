@@ -1,7 +1,8 @@
+// @ts-ignore-file
 import { Redis } from "@upstash/redis"; // <--- ИЗМЕНЕНО: импорт из npm
 import { compress, decompress } from "lz-string"; // <--- ИЗМЕНЕНО: импорт из npm
-import { MarketData, TF, DColors } from "./core/types"; // <--- ИЗМЕНЕНО: убраны .ts
-import { logger } from "./core/utils/logger"; // <--- ИЗМЕНЕНО: убраны .ts
+import { MarketData, TF, DColors } from "../core/types"; // <--- ИЗМЕНЕНО: путь ../core/
+import { logger } from "../core/utils/logger"; // <--- ИЗМЕНЕНО: путь ../core/
 
 /**
  * RedisStore - замена MemoryStore с персистентностью в Upstash Redis + компрессия
@@ -19,17 +20,17 @@ export class RedisStore {
 
     // --- ИЗМЕНЕНО: Deno.env.get -> process.env ---
     const url =
-      process.env.BAZZAR_UPSTASH_REDIS_REST_URL ||
-      process.env.BAZZAR_UPSTASH_REDIS_URL;
+      process.env.BIZZAR_UPSTASH_REDIS_REST_URL ||
+      process.env.BIZZAR_UPSTASH_REDIS_URL;
     const token =
-      process.env.BAZZAR_UPSTASH_REDIS_REST_TOKEN ||
-      process.env.BAZZAR_UPSTASH_REDIS_TOKEN;
+      process.env.BIZZAR_UPSTASH_REDIS_REST_TOKEN ||
+      process.env.BIZZAR_UPSTASH_REDIS_TOKEN;
     // ---
 
     if (!url || !token) {
       // Важно: убедитесь, что 'dotenv/config' импортирован в server.ts
       throw new Error(
-        "UPSTASH_REDIS_REST_URL и UPSTASH_REDIS_REST_TOKEN должны быть установлены в .env"
+        "BIZZAR_UPSTASH_REDIS_REST_URL и BIZZAR_UPSTASH_REDIS_REST_TOKEN должны быть установлены в .env"
       );
     }
 
