@@ -11,7 +11,7 @@ import {
   FailedCoinResult,
 } from "../types";
 import { logger } from "../utils/logger";
-import { sleep } from "../utils/helpers";
+import { sleep, TIMEFRAME_MS } from "../utils/helpers";
 import { CONFIG } from "../config"; // <--- Глобальный конфиг
 
 const BYBIT_INTERVALS: Record<TF, string> = {
@@ -182,9 +182,9 @@ async function fetchBybitKlineData(
     highPrice: parseFloat(entry[2]),
     lowPrice: parseFloat(entry[3]),
     closePrice: parseFloat(entry[4]),
-    volume: parseFloat(entry[7]),
+    volume: parseFloat(entry[6]), // Index 6 is Turnover (Quote Volume/USDT)
     volumeDelta: 0,
-    closeTime: parseInt(entry[6]),
+    closeTime: parseInt(entry[0]) + TIMEFRAME_MS[timeframe] - 1, // End of candle
   }));
 
   if (processedData.length > 2) {
@@ -240,8 +240,7 @@ async function fetchInBatches<T>(
     results.push(...batchResults);
 
     logger.info(
-      `[${label}] Progress: ${Math.min(i + batchSize, items.length)}/${
-        items.length
+      `[${label}] Progress: ${Math.min(i + batchSize, items.length)}/${items.length
       } (Batch: ${batchSize})`,
       DColors.cyan
     );
